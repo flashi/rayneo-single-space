@@ -1,0 +1,26 @@
+{
+  "name": "rayneo-single-space",
+  "version": "1.0.0",
+  "description": "Native Single-Display Spatial Workspace for RayNeo Air 4 Pro & Universal XR Glasses",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package-mac": "electron-packager . \"RayNeo Single Space\" --platform=darwin --arch=arm64 --out=dist --overwrite --prune=true --bundle-id=com.mario.rayneospatialsink --ignore=\"(dist|rayneo_debug.log|\\.git|\\.vscode)\" && codesign --force --deep --sign - \"./dist/RayNeo Single Space-darwin-arm64/RayNeo Single Space.app\" && xattr -cr \"./dist/RayNeo Single Space-darwin-arm64/RayNeo Single Space.app\""
+  },
+  "keywords": [
+    "rayneo",
+    "xreal",
+    "viture",
+    "xr",
+    "spatial",
+    "display",
+    "macos"
+  ],
+  "author": "Mario (flashi)",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-packager": "^17.1.2"
+  }
+}

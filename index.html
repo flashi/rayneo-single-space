@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RayNeo Single-Space Viewport</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000000; font-family: sans-serif; user-select: none; width: 100vw; height: 100vh; }
+
+        #ambient-glow {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            object-fit: cover; z-index: 5; display: none; opacity: 0;
+            filter: blur(50px) brightness(0.85) saturate(2.2); 
+            transform-origin: center center; transition: opacity 0.3s ease-in-out;
+            pointer-events: none;
+        }
+
+        #virtual-video { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: fill; z-index: 10; transition: transform 0.08s ease-out; transform-origin: center center; display: none; }
+
+        #canvas-border {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 15; transform-origin: center center; display: none; pointer-events: none;
+            box-sizing: border-box;
+            border: 12px solid #000000; 
+        }
+
+        body::after {
+            content: ""; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 16; pointer-events: none;
+            background: radial-gradient(circle, transparent 55%, rgba(0, 0, 0, 0.85) 95%, #000000 100%);
+        }
+
+        #dimmer-overlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #000000; z-index: 18; opacity: 0; pointer-events: none; transition: opacity 0.05s ease-out; }
+
+        #info-panel {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+            display: flex; flex-direction: column; gap: 10px; background: rgba(5, 5, 8, 0.92); 
+            border: 2px solid #00ffcc; padding: 18px 30px; border-radius: 12px;
+            font-family: monospace; font-size: 22px; font-weight: bold; z-index: 100; pointer-events: none;
+            text-align: center; opacity: 0; transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+            color: #00ffcc; text-shadow: 0 0 15px rgba(0, 255, 204, 0.9), 0 0 5px rgba(0, 255, 204, 0.9), 0 3px 10px rgba(0, 0, 0, 1);
+        }
+        #info-panel.visible { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        .hud-label { color: #a9a9b2; }
+        .hud-divider { font-size: 14px; color: #00ffcc; opacity: 0.4; margin: 4px 0; }
+
+        #info-panel.hud-locked-active {
+            color: #ff3b30 !important; text-shadow: 0 0 15px rgba(255, 59, 48, 0.9), 0 0 5px rgba(255, 59, 48, 0.9), 0 3px 10px rgba(0, 0, 0, 1) !important;
+            background: rgba(20, 5, 5, 0.95) !important; border: 2px solid #ff3b30 !important;
+        }
+        #info-panel.hud-locked-active .hud-label { color: #ff3b30 !important; opacity: 0.8; }
+        #info-panel.hud-locked-active .hud-divider { color: #ff3b30 !important; opacity: 0.4; }
+
+        #help-board {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+            display: none; flex-direction: column; gap: 14px; background: rgba(5, 8, 8, 0.92); 
+            border: 3px solid #00ffcc; padding: 35px 45px; border-radius: 16px;
+            font-family: monospace; font-size: 18px; color: #ffffff; z-index: 150; width: 580px; 
+            box-shadow: 0 0 50px rgba(0, 255, 204, 0.3); text-shadow: 0 2px 8px rgba(0, 0, 0, 1);
+        }
+        .help-header { font-size: 24px; font-weight: bold; color: #00ffcc; text-align: center; text-shadow: 0 0 15px rgba(0, 255, 204, 0.8); letter-spacing: 2px; }
+        .help-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 2px solid rgba(255, 255, 255, 0.1); }
+        .help-key { color: #00ffcc; font-weight: bold; text-shadow: 0 0 8px rgba(0, 255, 204, 0.5); }
+        .help-desc { color: #ffffff; font-weight: bold; }
+
+        #warning-screen { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; color: #ffffff; font-family: monospace; }
+        .warn-icon { font-size: 60px; color: #ff3b30; margin-bottom: 20px; animation: pulse 2s infinite ease-in-out; }
+        .warn-header { font-size: 22px; font-weight: bold; color: #ff3b30; letter-spacing: 2px; }
+        .laser-line { width: 400px; height: 1px; background: linear-gradient(90deg, transparent, #ff3b30, transparent); margin-bottom: 30px; }
+        .instruction-box { display: flex; flex-direction: column; gap: 15px; background: rgba(255, 59, 48, 0.05); border: 1px solid rgba(255, 59, 48, 0.2); padding: 20px 35px; border-radius: 8px; }
+        .step { font-size: 13px; text-align: left; color: #d1d1d6; }
+        .step-title { color: #ff3b30; font-weight: bold; }
+        @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.6; } 50% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.6; } }
+    </style>
+</head>
+<body>
+
+    <div id="warning-screen">
+        <div class="warn-icon">⚠️</div>
+        <div class="warn-header">HARDWARE INITIALIZATION FAILED</div>
+        <div class="laser-line"></div>
+        <div class="instruction-box">
+            <div class="step"><span class="step-title"> CONNECT HARDWARE :</span> Plug your RayNeo Air 4 Pro into the USB-C port.</div>
+            <div class="step"><span class="step-title"> DISPLAY SETTINGS :</span> Open macOS System Settings -> Displays.</div>
+            <div class="step"><span class="step-title"> EXTEND WORKSPACE :</span> Change "Mirror" to "Use as Extended Display".</div>
+        </div>
+    </div>
+
+    <video id="ambient-glow" autoplay playsinline muted></video>
+    <div id="canvas-border"></div>
+    <div id="dimmer-overlay"></div>
+
+    <div id="info-panel">
+        <div><span class="hud-label">SIZE: </span><span id="zoom-val-panel">100%</span></div>
+        <div style="font-size: 19px; letter-spacing: 1px; margin-top: 2px;"><span class="hud-label">POS: </span><span id="pos-graphic-panel">[ ⊙ CENTER ]</span></div>
+        <div style="font-size: 19px; letter-spacing: 1px;"><span class="hud-label">BRIGHTNESS: </span><span id="bright-val-panel">100%</span></div>
+        <div style="font-size: 19px; letter-spacing: 1px;"><span class="hud-label">AMBIENT: </span><span id="ambient-val-panel">OFF</span></div>
+        <div style="font-size: 19px; letter-spacing: 1px;"><span class="hud-label">FRAME: </span><span id="frame-val-panel">OFF</span></div>
+        <div class="hud-divider">-------------------------</div>
+        <div><span class="hud-label">CONTROLS: </span><span id="lock-val-panel">FREE</span></div>
+    </div>
+
+    <div id="help-board">
+        <div class="help-header">🛸 XR COUCH COMMANDS 🛸</div>
+        <div class="hud-divider" style="opacity: 0.6;">=========================================</div>
+        <div class="help-row"><span class="help-key">⌥ + UP / DOWN</span><span class="help-desc">Zoom View Core</span></div>
+        <div class="help-row"><span class="help-key">⌥ + ⇧ + ALL ARROWS</span><span class="help-desc">Shift Screen 2D</span></div>
+        <div class="help-row"><span class="help-key">⌥ + ⌃ + UP / DOWN</span><span class="help-desc">Software Brightness (Dimmer)</span></div>
+        <div class="help-row"><span class="help-key">⌥ + B</span><span class="help-desc">Toggle Canvas Screen Border</span></div>
+        <div class="help-row"><span class="help-key">⌥ + R</span><span class="help-desc">Recalibrate Center</span></div>
+        <div class="help-row"><span class="help-key">⌥ + S</span><span class="help-desc">Toggle Keyboard Lock</span></div>
+        <div class="help-row"><span class="help-key">⌥ + A</span><span class="help-desc">Toggle Ambient Light</span></div>
+        <div class="help-row"><span class="help-key">⌥ + H</span><span class="help-desc">Toggle this Help Board</span></div>
+        <div class="help-row"><span class="help-key">⌥ + Q</span><span class="help-desc">Emergency Quit</span></div>
+        <div class="hud-divider" style="opacity: 0.4; margin-top: 10px;">-----------------------------------------</div>
+        <div style="font-size: 14px; color: #a9a9b2; text-align: center; font-weight: bold;">RayNeo Single Space Core • Built by Mario</div>
+    </div>
+
+    <video id="virtual-video" autoplay playsinline></video>
+    <script>
+        let videoElement = document.getElementById('virtual-video');
+        let ambientElement = document.getElementById('ambient-glow'); 
+        let canvasBorder = document.getElementById('canvas-border'); 
+        let dimmerOverlay = document.getElementById('dimmer-overlay'); 
+        let warningScreen = document.getElementById('warning-screen');
+        let infoPanel = document.getElementById('info-panel');
+        let helpBoard = document.getElementById('help-board');
+        
+        let currentZoom = parseFloat(localStorage.getItem('mario_zoom')) || 1.0;
+        let currentPanX = parseInt(localStorage.getItem('mario_pan_x')) || 0; 
+        let currentPanY = parseInt(localStorage.getItem('mario_pan_y')) || 0; 
+        let currentBrightness = parseFloat(localStorage.getItem('mario_brightness')) || 1.0; 
+        let isAmbientActive = localStorage.getItem('mario_ambient') === 'true'; 
+        let isFrameActive = localStorage.getItem('mario_frame') === 'true'; 
+
+        let isControlLocked = false; let isHelpOpen = false; let fadeTimeout = null; let isCaptureActive = false;
+
+        console.log("🎬 HTML-Profi-Viewport geladen mit smarter Fokus-Weiche & Ambient-HUD.");
+
+        function triggerPanelFade() {
+            if (warningScreen.style.display === "none" && !isHelpOpen) {
+                infoPanel.classList.add('visible');
+                if (fadeTimeout) clearTimeout(fadeTimeout);
+                fadeTimeout = setTimeout(() => { infoPanel.classList.remove('visible'); }, 2000);
+            }
+        }
+
+        function updatePosHUD() {
+            const graphicElement = document.getElementById('pos-graphic-panel');
+            if (currentPanX === 0 && currentPanY === 0) { graphicElement.innerText = "[ ⊙ CENTER ]"; return; }
+            let hudText = "";
+            if (currentPanX < 0) { hudText += "◀ " + Math.abs(currentPanX) + "px"; }
+            else if (currentPanX > 0) { hudText += "▶ " + currentPanX + "px"; }
+            if (currentPanX !== 0 && currentPanY !== 0) { hudText += " | "; }
+            if (currentPanY < 0) { hudText += "▲ " + Math.abs(currentPanY) + "px"; }
+            else if (currentPanY > 0) { hudText += "▼ " + currentPanY + "px"; }
+            graphicElement.innerText = hudText;
+        }
+
+        function updateTransform() {
+            const transformString = `scale(${currentZoom}) translate(${currentPanX}px, ${currentPanY}px)`;
+            videoElement.style.transform = transformString;
+            canvasBorder.style.transform = transformString;
+            ambientElement.style.transform = `scale(${currentZoom * 1.15}) translate(${currentPanX}px, ${currentPanY}px)`;
+            
+            dimmerOverlay.style.opacity = (1.0 - currentBrightness);
+            
+            localStorage.setItem('mario_zoom', currentZoom);
+            localStorage.setItem('mario_pan_x', currentPanX);
+            localStorage.setItem('mario_pan_y', currentPanY);
+            localStorage.setItem('mario_brightness', currentBrightness);
+            localStorage.setItem('mario_frame', isFrameActive); 
+            
+            document.getElementById('zoom-val-panel').innerText = Math.round(currentZoom * 100) + "%";
+            document.getElementById('bright-val-panel').innerText = Math.round(currentBrightness * 100) + "%";
+            document.getElementById('frame-val-panel').innerText = isFrameActive ? "ON" : "OFF";
+            document.getElementById('ambient-val-panel').innerText = isAmbientActive ? "ON" : "OFF";
+            
+            updatePosHUD(); triggerPanelFade(); 
+        }
+
+        function toggleCanvasBorder() {
+            if (isControlLocked) { triggerPanelFade(); return; }
+            isFrameActive = !isFrameActive;
+            canvasBorder.style.display = isFrameActive ? "block" : "none";
+            updateTransform();
+        }
+
+        function adjustBrightness(amount) {
+            if (isControlLocked) { triggerPanelFade(); return; }
+            currentBrightness = Math.max(0.15, Math.min(1.0, currentBrightness + amount));
+            updateTransform();
+        }
+
+        function toggleAmbientLight() {
+            isAmbientActive = !isAmbientActive;
+            localStorage.setItem('mario_ambient', isAmbientActive);
+            if (isAmbientActive) {
+                ambientElement.style.display = "block";
+                setTimeout(() => { ambientElement.style.opacity = "1"; }, 10);
+            } else {
+                ambientElement.style.opacity = "0";
+                setTimeout(() => { ambientElement.style.display = "none"; }, 300); 
+            }
+            updateTransform();
+        }
+
+        function adjustZoom(amount) { if (isControlLocked) return; currentZoom = Math.max(0.4, Math.min(3.0, currentZoom + amount)); updateTransform(); }
+        function adjustPanX(amount) { if (isControlLocked) return; currentPanX += amount; updateTransform(); }
+        function adjustPanY(amount) { if (isControlLocked) return; currentPanY += amount; updateTransform(); }
+        
+        function resetView() { 
+            if (isControlLocked) return; 
+            currentZoom = 1.0; currentPanX = 0; currentPanY = 0; currentBrightness = 1.0; isFrameActive = false; isAmbientActive = false;
+            canvasBorder.style.display = "none";
+            ambientElement.style.opacity = "0";
+            ambientElement.style.display = "none";
+            updateTransform(); 
+        }
+
+        function toggleLock() {
+            isControlLocked = !isControlLocked;
+            const lockVal = document.getElementById('lock-val-panel');
+            if (isControlLocked) {
+                lockVal.innerText = "LOCKED"; infoPanel.classList.add('hud-locked-active');
+                helpBoard.style.display = "none"; isHelpOpen = false; 
+            } else {
+                lockVal.innerText = "FREE"; infoPanel.classList.remove('hud-locked-active');
+            }
+            triggerPanelFade();
+        }
+
+        function toggleHelpBoard() {
+            if (isHelpOpen) {
+                helpBoard.style.display = "none"; isHelpOpen = false; triggerPanelFade();
+            } else {
+                if (!isControlLocked) {
+                    helpBoard.style.display = "flex"; isHelpOpen = true;
+                    if (fadeTimeout) clearTimeout(fadeTimeout);
+                    infoPanel.classList.remove('visible');
+                }
+            }
+        }
+
+        async function startScreenCapture() {
+            if (isCaptureActive) return;
+            try {
+                const sourceId = await window.electronAPI.requestSource();
+                if (sourceId) {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: false,
+                        video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, minWidth: 1920, maxWidth: 1920, minHeight: 1080, maxHeight: 1080 } }
+                    });
+                    videoElement.srcObject = stream; ambientElement.srcObject = stream; 
+                    videoElement.style.display = "block"; warningScreen.style.display = "none"; isCaptureActive = true;
+                    if (isAmbientActive) { ambientElement.style.display = "block"; ambientElement.style.opacity = "1"; }
+                    
+                    canvasBorder.style.display = isFrameActive ? "block" : "none";
+                    updateTransform(); 
+                }
+            } catch(err) { console.log("❌ Pipeline Error: " + err.message); }
+        }
+
+        function stopScreenCapture() {
+            warningScreen.style.display = "flex"; videoElement.style.display = "none";
+            ambientElement.style.display = "none"; ambientElement.style.opacity = "0";
+            canvasBorder.style.display = "none"; helpBoard.style.display = "none"; isHelpOpen = false;
+            if (isCaptureActive) { videoElement.srcObject = null; ambientElement.srcObject = null; isCaptureActive = false; }
+        }
+
+        setInterval(() => {
+            if (isControlLocked && isCaptureActive) {
+                window.focus();
+            }
+        }, 1500);
+
+        window.electronAPI.onGlobalAction((action) => {
+            if (action && action.hardwareStatus !== undefined) {
+                if (action.hardwareStatus) { startScreenCapture(); } else { stopScreenCapture(); }
+                return;
+            }
+            
+            if (action === 'toggle-lock') { toggleLock(); return; }
+            if (action === 'toggle-help') { toggleHelpBoard(); return; }
+            if (action === 'toggle-ambient') { toggleAmbientLight(); return; }
+            if (action === 'toggle-border') { toggleCanvasBorder(); return; }
+            if (action === 'dim-up') { adjustBrightness(0.05); return; }
+            if (action === 'dim-down') { adjustBrightness(-0.05); return; }
+            
+            if (isControlLocked) return; 
+            
+            if (action === 'zoom-in') adjustZoom(0.05);
+            if (action === 'zoom-out') adjustZoom(-0.05);
+            if (action === 'pan-links') adjustPanX(-30);
+            if (action === 'pan-rechts') adjustPanX(30);
+            if (action === 'pan-oben') adjustPanY(-30);
+            if (action === 'pan-unten') adjustPanY(30);
+            if (action === 'reset') resetView();
+        });
+    </script>
+</body>
+</html>
